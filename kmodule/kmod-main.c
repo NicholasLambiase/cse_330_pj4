@@ -28,8 +28,8 @@ char* device = "";
 module_param(device, charp, S_IRUGO);
 
 /* USB storage disk-related data structures */
-struct block_device*     bdevice = NULL;
-static struct bio*       bdevice_bio;
+struct block_device*    bdevice = NULL;
+struct bio*             bdevice_bio;
 
 
 bool kmod_ioctl_init(void);

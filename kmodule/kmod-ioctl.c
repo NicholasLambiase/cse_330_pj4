@@ -23,6 +23,9 @@
 #include <linux/cdev.h>
 #include <linux/nospec.h>
 
+#include <linux/bio.h>
+#include <linux/blkdev.h>
+
 #include "../ioctl-defines.h"
 
 /* Device-related definitions */
@@ -31,8 +34,8 @@ static struct class*        kmod_class;
 static struct cdev          kmod_cdev;
 
 /* Main file externs */
-extern block_device*    bdevice = NULL;
-extern bio*             bdevice_bio;
+extern struct block_device*        bdevice;
+extern struct bio*                 bdevice_bio;
 
 /* Buffers for different operation requests */
 struct block_rw_ops         rw_request;
@@ -65,30 +68,24 @@ static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
             for (int i = 0; i < (req_size/512); i++)
             {
                 // Make sure the bio is associated with the device
-                bio_set_device(bdevice_bio, bdevice);
+                bio_set_dev(bdevice_bio, bdevice);
                 
                 // Set the bio to the correct operation
                 bdevice_bio->bi_iter.bi_sector = i;
                 bdevice_bio->bi_opf = REQ_OP_READ;
 
                 // Add kernel buffer page to the BIO with its correct offset
-                bio_add_page(bdevice_bio, vmalloc_to_page(kernel_buffer), 512, 0);
+                bio_add_page(bdevice_bio, vmalloc_to_page((void*) kern_buffer), 512, 0);
 
                 submit_bio_wait(bdevice_bio);
 
-                copy_to_user((void*)&kern_buffer, (void*)arg, sizeof(char*));
+                copy_to_user(rw_request.data, kern_buffer, rw_request.size);
             }
-            
-            
 
             return 0;
         case BWRITE:
 
             printk("Command: 'BWRITE' called\n");
-
-            /* Get request from user */
-            /* Allocate a kernel buffer to read/write user data */
-            /* Perform the block operation */    
 
             if(copy_from_user((void*)&rw_request, (void*)arg, sizeof(struct block_rw_ops))){
                 printk("Error: User didn't send right message.\n");
@@ -100,6 +97,29 @@ static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
 
             // Copy the size of the data we received
             req_size = rw_request.size;
+            
+            // Allocate Kernel Buffer with rw_request.size
+            // char* kern_buffer = (char*) vmalloc(req_size);
+
+            // Put the data into kern_buffer
+            char* kern_buffer = rw_request.data;
+
+            for (int i = 0; i < (req_size/512); i++)
+            {
+                // Make sure the bio is associated with the device
+                bio_set_dev(bdevice_bio, bdevice);
+                
+                // Set the bio to the correct operation
+                bdevice_bio->bi_iter.bi_sector = i;
+                bdevice_bio->bi_opf = REQ_OP_WRITE;
+
+                // Add kernel buffer page to the BIO with its correct offset
+                bio_add_page(bdevice_bio, vmalloc_to_page((void*) kern_buffer), 512, 0);
+
+                submit_bio_wait(bdevice_bio);
+
+                copy_to_user(rw_request.data, kern_buffer, rw_request.size);
+            }
             
                 
             return 0;
