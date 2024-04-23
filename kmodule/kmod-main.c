@@ -28,15 +28,18 @@ char* device = "";
 module_param(device, charp, S_IRUGO);
 
 /* USB storage disk-related data structures */
-static struct block_device*     bdevice = NULL;
-static struct bio*              bdevice_bio;
+struct block_device*     bdevice = NULL;
+static struct bio*       bdevice_bio;
+
 
 bool kmod_ioctl_init(void);
 void kmod_ioctl_teardown(void);
 
 static bool open_usb_disk(void) {
     /* Open the USB storage disk)*/
-    bdevice = blkdev_get_by_path(device, FMODE_READ, NULL, NULL);
+    bdevice = blkdev_get_by_path(device, FMODE_READ | FMODE_WRITE, NULL, NULL);
+    bdevice_bio = bio_alloc(bdevice, 1, REQ_OP_READ, GFP_NOIO);
+
     return true;
 }
 
