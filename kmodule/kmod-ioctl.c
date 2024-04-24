@@ -41,16 +41,25 @@ extern struct bio*                 bdevice_bio;
 struct block_rw_ops         rw_request;
 struct block_rwoffset_ops   rwoffset_request;
 
+/* Struct data variables */
 unsigned int req_size = -1;
-char* req_data = NULL;
 char* kern_buffer;
+
+/* Sector Calculation variables */
+const int SECTOR_BYTES = 4096;
+int size_of_block;
+int blocks_per_sector;
+int current_sector = 0;
+int current_offset = 0;
+
+/* Debuging Variables */
+int iteration_count = 1;
+
 
 static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
     switch (cmd)
     {
         case BREAD:
-            
-            printk("Command: 'BREAD' called\n");
 
             if(copy_from_user((void*)&rw_request, (void*)arg, sizeof(struct block_rw_ops))){
                 printk("Error: User didn't send right message.\n");
@@ -58,48 +67,79 @@ static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
             }
 
             // Debugging to see what we received from the IOCTL
-            printk("Size: %u\nData: %s\n", rw_request.size, rw_request.data);
+            printk("Command number %d: 'BREAD' called\tSize: %u\n", iteration_count, rw_request.size);
+            iteration_count++;
 
             // Copy the size of the data we received
             req_size = rw_request.size;
-            
+
             // Allocate Kernel Buffer with rw_request.size
             kern_buffer = (char*) vmalloc(req_size);
 
-            for (int sector = 0; sector < (req_size / 512); sector++)
+
+            // Determine the optimal block size and blocks per sector
+            if (req_size < SECTOR_BYTES)
             {
-                int page_offset = sector * 512;
-                
+                // Since the request size is less than the sector size there will be multiple blocks per sector
+                size_of_block = (int) req_size;
+                blocks_per_sector = SECTOR_BYTES / size_of_block;
+            }
+            else {
+                // Since the request size is greater than or equal to the sector size there can only be one block per sector
+                size_of_block = SECTOR_BYTES;
+                blocks_per_sector = 1;
+            }
+            
+
+            for (int block = 0; block < (req_size / size_of_block); block++)
+            {
+                if (size_of_block != SECTOR_BYTES){
+                    current_offset = ((block % blocks_per_sector) * size_of_block) % SECTOR_BYTES;
+                    if (block > 0 && current_offset == 0)
+                        current_sector++;
+                }
+                else {
+                    current_offset = 0;
+                    if (block != 0)
+                        current_sector++;
+                }
+
                 // Make sure the bio is associated with the device
                 bdevice_bio = bio_alloc(bdevice, 1, REQ_OP_READ, GFP_NOIO);
-                // bio_set_dev(bdevice_bio, bdevice);
+
+                // Aquire the BIO
                 bio_get(bdevice_bio);
                 
+                // Set the new sector number
+                bdevice_bio->bi_iter.bi_sector = current_sector;
+
                 // Set the bio to the correct operation
-                bdevice_bio->bi_iter.bi_sector = sector;
                 bdevice_bio->bi_opf = REQ_OP_READ;
 
                 // Add kernel buffer page to the BIO with its correct offset
-                bio_add_page(bdevice_bio, vmalloc_to_page((void*) kern_buffer), 512, page_offset);
+                bio_add_page(bdevice_bio, vmalloc_to_page((void*) kern_buffer), 512, current_offset);
 
+                // Submit the request and wait for the operation to complete
                 submit_bio_wait(bdevice_bio);
+                
+                // Return the BIO
                 bio_put(bdevice_bio);
 
+                // Copy the data that we now have stored in the kern_buffer back to the user
                 copy_to_user(rw_request.data, kern_buffer, rw_request.size);
             }
 
             return 0;
         case BWRITE:
 
-            // printk("Command: 'BWRITE' called\n");
-
             if(copy_from_user((void*)&rw_request, (void*)arg, sizeof(struct block_rw_ops))){
                 printk("Error: User didn't send right message.\n");
                 return -1;
             }
 
             // Debugging to see what we received from the IOCTL
-            // printk("Size: %u\nData: %s\n", rw_request.size, rw_request.data);
+            printk("Command number %d: 'BREAD' called\tSize: %u\n", iteration_count, rw_request.size);
+            iteration_count++;
 
             // Copy the size of the data we received
             req_size = rw_request.size;
@@ -110,18 +150,21 @@ static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
 
             for (int sector = 0; sector < (req_size / 512); sector++)
             {
+                int page_offset = sector * 512;
+                
                 // Make sure the bio is associated with the device
                 bdevice_bio = bio_alloc(bdevice, 1, REQ_OP_WRITE, GFP_NOIO);
+                bio_get(bdevice_bio);
                 
                 // Set the bio to the correct operation
                 bdevice_bio->bi_iter.bi_sector = sector;
                 bdevice_bio->bi_opf = REQ_OP_WRITE;
 
                 // Add kernel buffer page to the BIO with its correct offset
-                bio_add_page(bdevice_bio, vmalloc_to_page((void*) kern_buffer), 512, 0);
+                bio_add_page(bdevice_bio, vmalloc_to_page((void*) kern_buffer), 512, page_offset);
 
                 submit_bio_wait(bdevice_bio);
-                // bio_put(bdevice_bio);
+                bio_put(bdevice_bio);
 
                 copy_to_user(rw_request.data, kern_buffer, rw_request.size);
             }
