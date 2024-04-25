@@ -49,6 +49,7 @@ char* kern_buffer;
 const int SECTOR_BYTES = 4096;
 int current_offset = 0;
 int current_sector = 0;
+int kern_buffer_offset = 0;
 
 /* Debuging Variables */
 int iteration_count = 1;
@@ -102,7 +103,7 @@ static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
                 // Return the BIO
                 bio_put(bdevice_bio);
 
-                // current_offset += 512;
+                current_offset += 512;
                 current_sector++;
             }
 
@@ -136,7 +137,7 @@ static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
             for (int sector = 0; sector < (req_size / 512); sector++)
             {
                 // Debug for sectors and offsets
-                printk("WRITING Sector: %d\tOffset: %d\n", current_sector, current_offset);
+                printk("WRITING Sector: %d\tPage Offset: %d\tKern Offset: %d\n", current_sector, current_offset);
 
                 // Make sure the bio is associated with the device
                 bdevice_bio = bio_alloc(bdevice, 1, REQ_OP_WRITE, GFP_NOIO);
@@ -151,7 +152,7 @@ static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
                 bdevice_bio->bi_opf = REQ_OP_WRITE;
 
                 // Add kernel buffer page to the BIO with its correct offset
-                bio_add_page(bdevice_bio, vmalloc_to_page((void*) kern_buffer), 512, current_offset);
+                bio_add_page(bdevice_bio, (vmalloc_to_page((void*) kern_buffer) + kern_buffer_offset), 512, current_offset);
 
                 // Submit the request and wait for the operation to complete
                 submit_bio_wait(bdevice_bio);
@@ -160,6 +161,12 @@ static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
                 bio_put(bdevice_bio);
 
                 current_offset += 512;
+                if (current_offset == 4096)
+                {
+                    kern_buffer_offset += 4096;
+                    current_offset = 0;
+                }
+                
                 current_sector++;
             }
                 
