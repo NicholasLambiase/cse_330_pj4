@@ -48,6 +48,7 @@ char* kern_buffer;
 /* Sector Calculation variables */
 const int SECTOR_BYTES = 4096;
 int current_offset = 0;
+int current_sector = 0;
 
 /* Debuging Variables */
 int iteration_count = 1;
@@ -78,7 +79,7 @@ static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
             for (int sector = 0; sector < (req_size / 512); sector++)
             {
                 // Debug for sectors and offsets
-                printk("READING Sector: %d\tKern_Buffer Offset: %d\n", sector, current_offset);
+                printk("READING Sector: %d\tKern_Buffer Offset: %d\n", current_sector, current_offset);
 
                 // Make sure the bio is associated with the device
                 bdevice_bio = bio_alloc(bdevice, 1, REQ_OP_READ, GFP_NOIO);
@@ -87,7 +88,7 @@ static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
                 bio_get(bdevice_bio);
                 
                 // Set the new sector number
-                bdevice_bio->bi_iter.bi_sector = sector;
+                bdevice_bio->bi_iter.bi_sector = current_sector;
 
                 // Set the bio to the correct operation
                 bdevice_bio->bi_opf = REQ_OP_READ;
@@ -102,6 +103,7 @@ static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
                 bio_put(bdevice_bio);
 
                 current_offset += 512;
+                current_sector++;
             }
 
             // Copy the data that we now have stored in the kern_buffer back to the user
@@ -134,19 +136,19 @@ static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
             for (int sector = 0; sector < (req_size / 512); sector++)
             {
                 // Debug for sectors and offsets
-                printk("WRITING Sector: %d\tOffset: %d\n", sector, current_offset);
+                printk("WRITING Sector: %d\tOffset: %d\n", current_sector, current_offset);
 
                 // Make sure the bio is associated with the device
-                bdevice_bio = bio_alloc(bdevice, 1, REQ_OP_READ, GFP_NOIO);
+                bdevice_bio = bio_alloc(bdevice, 1, REQ_OP_WRITE, GFP_NOIO);
 
                 // Aquire the BIO
                 bio_get(bdevice_bio);
                 
                 // Set the new sector number
-                bdevice_bio->bi_iter.bi_sector = sector;
+                bdevice_bio->bi_iter.bi_sector = current_sector;
 
                 // Set the bio to the correct operation
-                bdevice_bio->bi_opf = REQ_OP_READ;
+                bdevice_bio->bi_opf = REQ_OP_WRITE;
 
                 // Add kernel buffer page to the BIO with its correct offset
                 bio_add_page(bdevice_bio, vmalloc_to_page((void*) kern_buffer), 512, current_offset);
@@ -158,10 +160,8 @@ static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
                 bio_put(bdevice_bio);
 
                 current_offset += 512;
+                current_sector++;
             }
-
-            // Copy the data that we now have stored in the kern_buffer back to the user
-            copy_to_user(rw_request.data, kern_buffer, rw_request.size);
                 
             return 0;
         case BREADOFFSET:
