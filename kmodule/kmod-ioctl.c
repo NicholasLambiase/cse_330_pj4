@@ -102,7 +102,7 @@ static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
                 // Return the BIO
                 bio_put(bdevice_bio);
 
-                current_offset += 512;
+                // current_offset += 512;
                 current_sector++;
             }
 
