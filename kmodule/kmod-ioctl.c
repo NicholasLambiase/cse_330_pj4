@@ -153,7 +153,7 @@ static long kmod_ioctl(struct file *f, unsigned int cmd, unsigned long arg) {
                 bdevice_bio->bi_opf = REQ_OP_WRITE;
 
                 // Add kernel buffer page to the BIO with its correct offset
-                bio_add_page(bdevice_bio, (vmalloc_to_page((void*) kern_buffer) + 4096), 512, current_offset);
+                bio_add_page(bdevice_bio, (vmalloc_to_page((void*) kern_buffer) + kern_buffer_offset), 512, current_offset);
 
                 // Submit the request and wait for the operation to complete
                 submit_bio_wait(bdevice_bio);
